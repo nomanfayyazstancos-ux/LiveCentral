@@ -194,7 +194,7 @@ function failProduct(
   extra = "",
 ): never {
   if (error instanceof MenuError) {
-    revalidatePath("/");
+    revalidatePath("/", "layout");
     revalidatePath(`/products/${categoryId}`);
     goProducts(categoryId, { ...params, error: error.message }, extra);
   }
@@ -202,7 +202,7 @@ function failProduct(
 }
 function fail(error: unknown, params: Record<string, string | number | null | undefined>): never {
   if (error instanceof MenuError) {
-    revalidatePath("/");
+    revalidatePath("/", "layout");
     go({ ...params, error: error.message });
   }
   throw error;
@@ -217,7 +217,7 @@ export async function addCategory(formData: FormData) {
     const id = await createCategory(parentId, name, text(formData, "description"));
     const parent = parentId ? (await loadMenu()).byId.get(parentId)?.name ?? "" : "";
     await note("added", "category", name, parent, id, parentId);
-    revalidatePath("/");
+    revalidatePath("/", "layout");
     go({ category: id, saved: "category" });
   } catch (error) {
     fail(error, { category: parentId });
@@ -243,7 +243,7 @@ export async function saveCategory(formData: FormData) {
       id,
       id,
     );
-    revalidatePath("/");
+    revalidatePath("/", "layout");
     go({ category: id, saved: "category" });
   } catch (error) {
     fail(error, { category: id });
@@ -257,7 +257,7 @@ export async function deleteCategory(formData: FormData) {
     const existing = (await loadMenu()).byId.get(id);
     const parentId = await removeCategory(id);
     await note("deleted", "category", existing?.name ?? "Category", "", null, parentId);
-    revalidatePath("/");
+    revalidatePath("/", "layout");
     go({ category: parentId, saved: "deleted" });
   } catch (error) {
     fail(error, { category: id });
@@ -281,7 +281,7 @@ export async function addProduct(formData: FormData) {
       tags: text(formData, "tags"),
     });
     await note("added", "product", name, (await loadMenu()).byId.get(categoryId)?.name ?? "", id, categoryId);
-    revalidatePath("/");
+    revalidatePath("/", "layout");
     revalidatePath(`/products/${categoryId}`);
     goProducts(categoryId, { saved: "product" });
   } catch (error) {
@@ -321,7 +321,7 @@ export async function saveProduct(formData: FormData) {
       id,
       categoryId,
     );
-    revalidatePath("/");
+    revalidatePath("/", "layout");
     revalidatePath(`/products/${categoryId}`);
     goProducts(categoryId, { saved: "product" });
   } catch (error) {
@@ -337,7 +337,7 @@ export async function deleteProduct(formData: FormData) {
     const existing = menu.products.find((item) => item.id === id);
     const categoryId = await removeProduct(id);
     await note("deleted", "product", existing?.name ?? "Product", menu.byId.get(categoryId)?.name ?? "", null, categoryId);
-    revalidatePath("/");
+    revalidatePath("/", "layout");
     revalidatePath(`/products/${categoryId}`);
     goProducts(categoryId, { saved: "deleted" });
   } catch (error) {

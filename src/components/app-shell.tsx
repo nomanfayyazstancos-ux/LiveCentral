@@ -1,6 +1,7 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { logout } from "@/app/actions";
+import { MenuSearch } from "@/components/menu-search";
 import { Sidebar, type TreeItem } from "@/components/sidebar";
 import { btnQuiet } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
@@ -18,15 +19,11 @@ function slim(nodes: CategoryNode[]): TreeItem[] {
 
 export async function AppShell({
   tree,
-  activeId,
   categoryCount,
-  query,
   children,
 }: {
   tree: CategoryNode[];
-  activeId: number | null;
   categoryCount: number;
-  query: string;
   children: ReactNode;
 }) {
   const user = await requireUser();
@@ -55,19 +52,16 @@ export async function AppShell({
             <form action={logout}>
               <button type="submit" className={btnQuiet}>Logout</button>
             </form>
-            <form action="/" className="w-full sm:w-80">
-              <input
-                name="q"
-                defaultValue={query}
-                placeholder="Category ya product dhoondo"
-                className="w-full rounded-full border border-[#d9deea] bg-[#f4f6fb] px-4 py-2 text-sm outline-none focus:border-[#1c2c86]"
-              />
-            </form>
+            <Suspense fallback={<div className="h-10 w-full sm:w-80" />}>
+              <MenuSearch />
+            </Suspense>
           </div>
         </div>
       </header>
       <div className="mx-auto flex max-w-[1600px] flex-col lg:items-start lg:flex-row">
-        <Sidebar tree={slim(tree)} activeId={activeId} />
+        <Suspense fallback={<div className="w-full shrink-0 border-b border-[#e3e6ef] bg-white lg:h-screen lg:w-96 lg:border-r lg:border-b-0" />}>
+          <Sidebar tree={slim(tree)} />
+        </Suspense>
         <main className="min-w-0 flex-1 px-5 py-6">{children}</main>
       </div>
     </div>

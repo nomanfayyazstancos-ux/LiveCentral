@@ -1,4 +1,3 @@
-import { AppShell } from "@/components/app-shell";
 import { LiveTree, type LiveNode } from "@/components/live-tree";
 import { requireUser } from "@/lib/auth";
 import { loadMenu, type CategoryNode } from "@/lib/db";
@@ -22,9 +21,5 @@ export default async function TreePage() {
   await requireUser();
   const menu = await loadMenu();
 
-  return (
-    <AppShell tree={menu.tree} activeId={null} categoryCount={menu.categories.length} query="">
-      <LiveTree tree={liveNodes(menu.tree)} categoryTotal={menu.categories.length} productTotal={menu.products.length} />
-    </AppShell>
-  );
+  return <LiveTree tree={liveNodes(menu.tree)} categoryTotal={menu.categories.length} productTotal={menu.products.length} />;
 }

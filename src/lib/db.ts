@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { cookies } from "next/headers";
 import { connection } from "next/server";
 import { DatabaseSync, type SqlValue } from "node:sqlite";
 import { MongoClient, type Db } from "mongodb";
@@ -125,6 +126,7 @@ type MenuData = {
   productsByCategory: Map<number, Product[]>;
   nodeById: Map<number, CategoryNode>;
   tree: CategoryNode[];
+  revision: number;
 };
 
 const globalForDb = globalThis as unknown as {
@@ -132,11 +134,28 @@ const globalForDb = globalThis as unknown as {
   mongoReady?: Promise<Db>;
   menuCache?: MenuData | null;
   menuLoading?: Promise<MenuData> | null;
+  menuEpoch?: number;
   userCache?: Map<string, User | null>;
 };
 
-function clearMenuCache() {
+async function clearMenuCache() {
+  globalForDb.menuEpoch = (globalForDb.menuEpoch ?? 0) + 1;
   globalForDb.menuCache = null;
+  globalForDb.menuLoading = null;
+  const db = await database();
+  const row = await db.collection<CounterDoc>("counters").findOneAndUpdate(
+    { _id: "menu" },
+    { $inc: { seq: 1 } },
+    { upsert: true, returnDocument: "after" },
+  );
+  const seq = row && "seq" in row ? row.seq : (row as { value?: CounterDoc } | null)?.value?.seq;
+  const jar = await cookies();
+  jar.set("menu_rev", String(Number(seq ?? 1)), {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30,
+  });
 }
 
 function userCache() {
@@ -565,19 +584,32 @@ async function buildMenu(): Promise<MenuData> {
   }
 
   const tree = (childrenOf.get(null) ?? []).map(toNode);
-  return { categories, products, byId, productsByCategory, nodeById, tree };
+  const revisionRow = await dbRevision();
+  return { categories, products, byId, productsByCategory, nodeById, tree, revision: revisionRow };
+}
+
+async function dbRevision() {
+  const db = await database();
+  const row = await db.collection<CounterDoc>("counters").findOne({ _id: "menu" });
+  return Number(row?.seq ?? 0);
 }
 
 export async function loadMenu() {
-  if (globalForDb.menuCache) return globalForDb.menuCache;
+  const revision = Number((await cookies()).get("menu_rev")?.value ?? "0");
+  const cached = globalForDb.menuCache;
+  if (cached && (revision === 0 || cached.revision >= revision)) return cached;
+  const epoch = globalForDb.menuEpoch ?? 0;
   if (!globalForDb.menuLoading) {
     globalForDb.menuLoading = buildMenu().finally(() => {
       globalForDb.menuLoading = null;
     });
   }
   const menu = await globalForDb.menuLoading;
-  globalForDb.menuCache = menu;
-  return menu;
+  if ((globalForDb.menuEpoch ?? 0) !== epoch) return loadMenu();
+  if (!globalForDb.menuCache || menu.revision >= globalForDb.menuCache.revision) {
+    globalForDb.menuCache = menu;
+  }
+  return globalForDb.menuCache;
 }
 
 export function breadcrumb(categoryId: number, byId: Map<number, Category>) {
@@ -626,7 +658,7 @@ export async function createCategory(parentId: number | null, name: string, desc
     if (!parent) throw new MenuError("Parent category was not found.");
   }
   const id = await insertCategory(parentId, requireName(name), description.trim());
-  clearMenuCache();
+  await clearMenuCache();
   return id;
 }
 
@@ -639,7 +671,7 @@ export async function updateCategory(id: number, name: string, description: stri
     { _id: id },
     { $set: { name: clean, slug: await uniqueCategorySlug(clean, id), description: description.trim() } },
   );
-  clearMenuCache();
+  await clearMenuCache();
 }
 
 function collectIds(id: number, childrenOf: Map<number, number[]>, into: number[]) {
@@ -663,7 +695,7 @@ export async function removeCategory(id: number) {
   const db = await database();
   await db.collection<ProductDoc>("products").deleteMany({ categoryId: { $in: ids } });
   await db.collection<CategoryDoc>("categories").deleteMany({ _id: { $in: ids } });
-  clearMenuCache();
+  await clearMenuCache();
   return existing.parentId;
 }
 
@@ -681,7 +713,7 @@ export async function createProduct(input: {
   const menu = await loadMenu();
   const category = menu.byId.get(input.categoryId);
   if (!category) throw new MenuError("Category was not found.");
-  return insertProduct({
+  const id = await insertProduct({
     categoryId: input.categoryId,
     name: requireName(input.name),
     sku: input.sku.trim(),
@@ -692,7 +724,8 @@ export async function createProduct(input: {
     imageUrl: input.imageUrl.trim(),
     tags: cleanTags(input.tags),
   });
-  clearMenuCache();
+  await clearMenuCache();
+  return id;
 }
 
 export async function updateProduct(input: {
@@ -726,7 +759,7 @@ export async function updateProduct(input: {
       },
     },
   );
-  clearMenuCache();
+  await clearMenuCache();
   return product.categoryId;
 }
 
@@ -735,7 +768,7 @@ export async function removeProduct(id: number) {
   if (!product) throw new MenuError("Product was not found.");
   const db = await database();
   await db.collection<ProductDoc>("products").deleteOne({ _id: id });
-  clearMenuCache();
+  await clearMenuCache();
   return product.categoryId;
 }
 

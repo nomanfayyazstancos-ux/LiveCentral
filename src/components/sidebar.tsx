@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 export type TreeItem = {
@@ -101,7 +102,16 @@ function readOpen() {
   }
 }
 
-export function Sidebar({ tree, activeId }: { tree: TreeItem[]; activeId: number | null }) {
+export function Sidebar({ tree }: { tree: TreeItem[] }) {
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const categoryParam = Number(params.get("category") ?? "");
+  const productMatch = pathname.match(/^\/products\/(\d+)/);
+  const activeId = productMatch
+    ? Number(productMatch[1])
+    : pathname === "/" && Number.isFinite(categoryParam) && categoryParam > 0
+      ? categoryParam
+      : null;
   const listRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState<number[]>([]);
 

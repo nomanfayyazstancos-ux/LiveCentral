@@ -1,4 +1,3 @@
-import { AppShell } from "@/components/app-shell";
 import { ProductPanel } from "@/components/product-panel";
 import { requireUser } from "@/lib/auth";
 import { canEditMenu, loadMenu } from "@/lib/db";
@@ -23,20 +22,16 @@ export default async function ProductPage({
   const categoryId = Number(id);
   const category = menu.byId.get(categoryId);
 
-  return (
-    <AppShell tree={menu.tree} activeId={category?.id ?? null} categoryCount={menu.categories.length} query={one(query.q)}>
-      {category ? (
-        <ProductPanel
-          category={category}
-          byId={menu.byId}
-          products={menu.productsByCategory.get(category.id) ?? []}
-          error={one(query.error)}
-          saved={one(query.saved)}
-          canEdit={canEditMenu(user.role)}
-        />
-      ) : (
-        <p className="text-sm text-[#5d6880]">This category does not exist.</p>
-      )}
-    </AppShell>
+  return category ? (
+    <ProductPanel
+      category={category}
+      byId={menu.byId}
+      products={menu.productsByCategory.get(category.id) ?? []}
+      error={one(query.error)}
+      saved={one(query.saved)}
+      canEdit={canEditMenu(user.role)}
+    />
+  ) : (
+    <p className="text-sm text-[#5d6880]">This category does not exist.</p>
   );
 }

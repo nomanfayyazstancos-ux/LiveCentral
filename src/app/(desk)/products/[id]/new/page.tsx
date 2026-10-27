@@ -1,4 +1,3 @@
-import { AppShell } from "@/components/app-shell";
 import { ProductForm } from "@/components/product-form";
 import { requireUser } from "@/lib/auth";
 import { canEditMenu, loadMenu } from "@/lib/db";
@@ -22,13 +21,9 @@ export default async function NewProductPage({
   const menu = await loadMenu();
   const category = menu.byId.get(Number(id));
 
-  return (
-    <AppShell tree={menu.tree} activeId={category?.id ?? null} categoryCount={menu.categories.length} query={one(query.q)}>
-      {category ? (
-        <ProductForm category={category} byId={menu.byId} product={null} error={one(query.error)} canEdit={canEditMenu(user.role)} />
-      ) : (
-        <p className="text-sm text-[#5d6880]">This category does not exist.</p>
-      )}
-    </AppShell>
+  return category ? (
+    <ProductForm category={category} byId={menu.byId} product={null} error={one(query.error)} canEdit={canEditMenu(user.role)} />
+  ) : (
+    <p className="text-sm text-[#5d6880]">This category does not exist.</p>
   );
 }
