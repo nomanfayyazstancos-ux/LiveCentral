@@ -1,6 +1,5 @@
 import fs from "fs";
 import path from "path";
-import { cookies } from "next/headers";
 import { connection } from "next/server";
 import { DatabaseSync, type SqlValue } from "node:sqlite";
 import { MongoClient, type Db } from "mongodb";
@@ -143,19 +142,7 @@ async function clearMenuCache() {
   globalForDb.menuCache = null;
   globalForDb.menuLoading = null;
   const db = await database();
-  const row = await db.collection<CounterDoc>("counters").findOneAndUpdate(
-    { _id: "menu" },
-    { $inc: { seq: 1 } },
-    { upsert: true, returnDocument: "after" },
-  );
-  const seq = row && "seq" in row ? row.seq : (row as { value?: CounterDoc } | null)?.value?.seq;
-  const jar = await cookies();
-  jar.set("menu_rev", String(Number(seq ?? 1)), {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 30,
-  });
+  await db.collection<CounterDoc>("counters").updateOne({ _id: "menu" }, { $inc: { seq: 1 } }, { upsert: true });
 }
 
 function userCache() {
@@ -541,6 +528,16 @@ export async function allProducts() {
   return rows.map(mapProduct);
 }
 
+export async function productsInCategory(categoryId: number) {
+  const db = await database();
+  const rows = await db
+    .collection<ProductDoc>("products")
+    .find({ categoryId })
+    .sort({ name: 1 })
+    .toArray();
+  return rows.map(mapProduct);
+}
+
 export function categoryDepth(category: Category, byId: Map<number, Category>) {
   let depth = 1;
   let parentId = category.parentId;
@@ -551,8 +548,11 @@ export function categoryDepth(category: Category, byId: Map<number, Category>) {
   return depth;
 }
 
-async function buildMenu(): Promise<MenuData> {
+async function buildMenu(attempt = 0): Promise<MenuData> {
+  const started = await dbRevision();
   const [categories, products] = await Promise.all([allCategories(), allProducts()]);
+  const revision = await dbRevision();
+  if (started !== revision && attempt < 2) return buildMenu(attempt + 1);
   const byId = new Map(categories.map((category) => [category.id, category]));
   const productsByCategory = new Map<number, Product[]>();
   for (const product of products) {
@@ -584,8 +584,7 @@ async function buildMenu(): Promise<MenuData> {
   }
 
   const tree = (childrenOf.get(null) ?? []).map(toNode);
-  const revisionRow = await dbRevision();
-  return { categories, products, byId, productsByCategory, nodeById, tree, revision: revisionRow };
+  return { categories, products, byId, productsByCategory, nodeById, tree, revision };
 }
 
 async function dbRevision() {
@@ -595,9 +594,9 @@ async function dbRevision() {
 }
 
 export async function loadMenu() {
-  const revision = Number((await cookies()).get("menu_rev")?.value ?? "0");
+  const revision = await dbRevision();
   const cached = globalForDb.menuCache;
-  if (cached && (revision === 0 || cached.revision >= revision)) return cached;
+  if (cached?.revision === revision) return cached;
   const epoch = globalForDb.menuEpoch ?? 0;
   if (!globalForDb.menuLoading) {
     globalForDb.menuLoading = buildMenu().finally(() => {

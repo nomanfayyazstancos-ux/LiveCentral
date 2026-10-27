@@ -1,6 +1,6 @@
 import { ProductPanel } from "@/components/product-panel";
 import { requireUser } from "@/lib/auth";
-import { canEditMenu, loadMenu } from "@/lib/db";
+import { canEditMenu, loadMenu, productsInCategory } from "@/lib/db";
 
 function one(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
@@ -21,12 +21,13 @@ export default async function ProductPage({
   const menu = await loadMenu();
   const categoryId = Number(id);
   const category = menu.byId.get(categoryId);
+  const products = category ? await productsInCategory(category.id) : [];
 
   return category ? (
     <ProductPanel
       category={category}
       byId={menu.byId}
-      products={menu.productsByCategory.get(category.id) ?? []}
+      products={products}
       error={one(query.error)}
       saved={one(query.saved)}
       canEdit={canEditMenu(user.role)}
