@@ -1,15 +1,14 @@
+"use client";
+
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { useMemo } from "react";
 import { addCategory, deleteCategory, deleteProduct, saveCategory, saveProduct } from "@/app/actions";
-import { ChangeNote, noteView, notesForPage } from "@/components/activity-list";
+import { ChangeNote, findNote, findRemoved, noteView, type ActivityNote } from "@/components/activity-note";
+import { useBrowse } from "@/components/browse";
 import { EditableName } from "@/components/editable-name";
 import { btn, field } from "@/components/ui";
-import {
-  breadcrumb,
-  levelName,
-  type Category,
-  type CategoryNode,
-  type Product,
-} from "@/lib/db";
+import type { CategoryNode, Product } from "@/lib/db";
 
 function Banner({ error, saved }: { error: string; saved: string }) {
   if (error) {
@@ -27,6 +26,39 @@ function Banner({ error, saved }: { error: string; saved: string }) {
       {message}
     </p>
   );
+}
+
+function levelName(depth: number) {
+  if (depth <= 1) return "Category";
+  if (depth === 2) return "Subcategory";
+  if (depth === 3) return "Sub-subcategory";
+  return `Level ${depth}`;
+}
+
+function indexTree(nodes: CategoryNode[]) {
+  const byId = new Map<number, CategoryNode>();
+  const parentOf = new Map<number, number | null>();
+  function walk(list: CategoryNode[], parent: number | null) {
+    for (const node of list) {
+      byId.set(node.id, node);
+      parentOf.set(node.id, parent);
+      walk(node.children, node.id);
+    }
+  }
+  walk(nodes, null);
+  return { byId, parentOf };
+}
+
+function breadcrumb(id: number, byId: Map<number, CategoryNode>, parentOf: Map<number, number | null>) {
+  const crumbs: CategoryNode[] = [];
+  let current: number | null = id;
+  while (current) {
+    const node = byId.get(current);
+    if (!node) break;
+    crumbs.unshift(node);
+    current = parentOf.get(current) ?? null;
+  }
+  return crumbs;
 }
 
 function CategoryForm({
@@ -54,11 +86,10 @@ function CategoryForm({
   );
 }
 
-export async function CategoryPanel({
+export function CategoryPanel({
   tree,
-  byId,
-  nodeById,
-  productsByCategory,
+  products,
+  activities,
   categoryId,
   error,
   saved,
@@ -66,22 +97,31 @@ export async function CategoryPanel({
   canEdit,
 }: {
   tree: CategoryNode[];
-  byId: Map<number, Category>;
-  nodeById: Map<number, CategoryNode>;
-  productsByCategory: Map<number, Product[]>;
+  products: Product[];
+  activities: ActivityNote[];
   categoryId: number | null;
   error: string;
   saved: string;
   query: string;
   canEdit: boolean;
 }) {
-  const notes = await notesForPage();
-  if (query) {
-    const needle = query.toLowerCase();
+  const browse = useBrowse();
+  const params = useSearchParams();
+  const { byId, parentOf } = useMemo(() => indexTree(tree), [tree]);
+  const liveId = browse ? browse.categoryId : categoryId;
+  const liveQuery = browse?.browsing ? "" : (params.get("q") ?? query).trim();
+  const liveError = browse?.browsing ? "" : params.get("error") ?? error;
+  const liveSaved = browse?.browsing ? "" : params.get("saved") ?? saved;
+  const showSearch = Boolean(liveQuery);
+  function openCategory(event: { preventDefault: () => void; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean }, id: number | null) {
+    if (!browse || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    browse.openCategory(id);
+  }
+  if (showSearch) {
+    const needle = liveQuery.toLowerCase();
     const categories = [...byId.values()].filter((item) => item.name.toLowerCase().includes(needle));
-    const products = [...productsByCategory.values()]
-      .flat()
-      .filter(
+    const foundProducts = products.filter(
         (item) =>
           item.name.toLowerCase().includes(needle) ||
           item.sku.toLowerCase().includes(needle) ||
@@ -89,31 +129,32 @@ export async function CategoryPanel({
       );
     return (
       <section>
-        <Banner error={error} saved={saved} />
-        <h2 className="text-2xl font-medium text-[#1c2c86]">Search: {query}</h2>
+        <Banner error={liveError} saved={liveSaved} />
+        <h2 className="text-2xl font-medium text-[#1c2c86]">Search: {liveQuery}</h2>
         <div className="mt-5 grid gap-3">
           {categories.slice(0, 40).map((item) => {
-            const path = breadcrumb(item.id, byId).map((crumb) => crumb.name).join(" / ");
+            const path = breadcrumb(item.id, byId, parentOf).map((crumb) => crumb.name).join(" / ");
             return (
               <div key={item.id} className="rounded-xl border border-[#e3e6ef] bg-white px-4 py-3">
-                <span className="text-xs text-[#5d6880]">{levelName(breadcrumb(item.id, byId).length)}</span>
+                <span className="text-xs text-[#5d6880]">{levelName(breadcrumb(item.id, byId, parentOf).length)}</span>
                 <span className="mt-1 block">
                   <EditableName
                     action={saveCategory}
                     name={item.name}
                     hidden={{ id: String(item.id), description: item.description }}
-                    note={noteView(notes.on(item.id, "category"))}
+                    note={noteView(findNote(activities, item.id, "category"))}
                     href={`/?category=${item.id}`}
+                    onClick={(event) => openCategory(event, item.id)}
                     canEdit={canEdit}
                     remove={{ action: deleteCategory, id: item.id, confirm: "Is category ko aur uske andar ki sab cheezein delete karun?" }}
                   />
                 </span>
-                <Link href={`/?category=${item.id}`} className="mt-1 block text-sm text-[#1c2c86]">{path}</Link>
+                <Link href={`/?category=${item.id}`} onClick={(event) => openCategory(event, item.id)} className="mt-1 block text-sm text-[#1c2c86]">{path}</Link>
               </div>
             );
           })}
-          {products.slice(0, 20).map((item) => {
-            const path = breadcrumb(item.categoryId, byId).map((crumb) => crumb.name).join(" / ");
+          {foundProducts.slice(0, 20).map((item) => {
+            const path = breadcrumb(item.categoryId, byId, parentOf).map((crumb) => crumb.name).join(" / ");
             return (
               <div key={item.id} className="rounded-xl border border-[#e3e6ef] bg-white px-4 py-3">
                 <span className="text-xs text-[#5d6880]">Product · {item.sku || "No SKU"}</span>
@@ -132,7 +173,7 @@ export async function CategoryPanel({
                       imageUrl: item.imageUrl,
                       tags: item.tags,
                     }}
-                    note={noteView(notes.on(item.id, "product"))}
+                    note={noteView(findNote(activities, item.id, "product"))}
                     href={`/products/${item.categoryId}/${item.id}`}
                     canEdit={canEdit}
                     remove={{ action: deleteProduct, id: item.id, categoryId: item.categoryId, confirm: "Is product ko delete karun?" }}
@@ -142,7 +183,7 @@ export async function CategoryPanel({
               </div>
             );
           })}
-          {categories.length === 0 && products.length === 0 ? (
+          {categories.length === 0 && foundProducts.length === 0 ? (
             <p className="text-sm text-[#5d6880]">Nothing matched.</p>
           ) : null}
           {categories.length > 40 ? (
@@ -153,10 +194,10 @@ export async function CategoryPanel({
     );
   }
 
-  if (!categoryId) {
+  if (!liveId) {
     return (
       <section>
-        <Banner error={error} saved={saved} />
+        <Banner error={liveError} saved={liveSaved} />
         <h2 className="text-2xl font-medium text-[#1c2c86]">All departments</h2>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-[#5d6880]">
           Left side se category kholen. Product list alag page par sirf added products dikhati hai.
@@ -170,14 +211,15 @@ export async function CategoryPanel({
                   action={saveCategory}
                   name={item.name}
                   hidden={{ id: String(item.id), description: item.description }}
-                  note={noteView(notes.on(item.id, "category"))}
+                  note={noteView(findNote(activities, item.id, "category"))}
                   href={`/?category=${item.id}`}
+                  onClick={(event) => openCategory(event, item.id)}
                   className="text-lg font-medium"
                   canEdit={canEdit}
                   remove={{ action: deleteCategory, id: item.id, confirm: "Is category ko aur uske andar ki sab cheezein delete karun?" }}
                 />
               </span>
-              <Link href={`/?category=${item.id}`} className="mt-2 block text-sm text-[#5d6880]">{item.insideCount} categories inside</Link>
+              <Link href={`/?category=${item.id}`} onClick={(event) => openCategory(event, item.id)} className="mt-2 block text-sm text-[#5d6880]">{item.insideCount} categories inside</Link>
             </div>
           ))}
         </div>
@@ -195,29 +237,28 @@ export async function CategoryPanel({
     );
   }
 
-  const category = byId.get(categoryId);
+  const category = byId.get(liveId);
   if (!category) {
     return <p className="text-sm text-[#5d6880]">This category does not exist.</p>;
   }
 
-  const crumbs = breadcrumb(category.id, byId);
+  const crumbs = breadcrumb(category.id, byId, parentOf);
   const depth = crumbs.length;
-  const current = nodeById.get(category.id);
-  const children = current?.children ?? [];
-  const productCount = productsByCategory.get(category.id)?.length ?? 0;
+  const children = category.children ?? [];
+  const productCount = category.productCount;
 
   return (
     <section>
-      <Banner error={error} saved={saved} />
+      <Banner error={liveError} saved={liveSaved} />
       <nav className="mb-3 flex flex-wrap items-center gap-2 text-sm text-[#5d6880]">
-        <Link href="/" className="hover:text-[#1c2c86]">All</Link>
+        <Link href="/" onClick={(event) => openCategory(event, null)} className="hover:text-[#1c2c86]">All</Link>
         {crumbs.map((crumb, index) => (
           <span key={crumb.id} className="flex items-center gap-2">
             <span>/</span>
             {index === crumbs.length - 1 ? (
               <span className="font-medium text-[#1a1a1a]">{crumb.name}</span>
             ) : (
-              <Link href={`/?category=${crumb.id}`} className="hover:text-[#1c2c86]">{crumb.name}</Link>
+              <Link href={`/?category=${crumb.id}`} onClick={(event) => openCategory(event, crumb.id)} className="hover:text-[#1c2c86]">{crumb.name}</Link>
             )}
           </span>
         ))}
@@ -230,7 +271,7 @@ export async function CategoryPanel({
               action={saveCategory}
               name={category.name}
               hidden={{ id: String(category.id), description: category.description }}
-              note={noteView(notes.on(category.id, "category"))}
+              note={noteView(findNote(activities, category.id, "category"))}
               className="text-2xl font-medium text-[#1c2c86]"
               canEdit={canEdit}
               remove={{ action: deleteCategory, id: category.id, confirm: "Is category ko aur uske andar ki sab cheezein delete karun?" }}
@@ -262,8 +303,9 @@ export async function CategoryPanel({
                     action={saveCategory}
                     name={child.name}
                     hidden={{ id: String(child.id), description: child.description }}
-                    note={noteView(notes.on(child.id, "category"))}
+                    note={noteView(findNote(activities, child.id, "category"))}
                     href={child.children.length > 0 ? `/?category=${child.id}` : `/products/${child.id}`}
+                    onClick={child.children.length > 0 ? (event) => openCategory(event, child.id) : undefined}
                     canEdit={canEdit}
                     remove={{ action: deleteCategory, id: child.id, confirm: "Is category ko aur uske andar ki sab cheezein delete karun?" }}
                   />
@@ -273,6 +315,7 @@ export async function CategoryPanel({
                 ) : null}
                 <Link
                   href={child.children.length > 0 ? `/?category=${child.id}` : `/products/${child.id}`}
+                  onClick={child.children.length > 0 ? (event) => openCategory(event, child.id) : undefined}
                   className="mt-2 block text-sm text-[#5d6880]"
                 >
                   {child.children.length > 0
@@ -283,7 +326,7 @@ export async function CategoryPanel({
             ))}
           </div>
         )}
-        <ChangeNote item={notes.removed(category.id, "category")} />
+        <ChangeNote item={findRemoved(activities, category.id, "category")} />
       </div>
 
       {canEdit ? (

@@ -41,6 +41,7 @@ export function EditableName({
   hidden,
   note,
   href,
+  onClick,
   className = "font-medium",
   canEdit = true,
   remove,
@@ -50,6 +51,7 @@ export function EditableName({
   hidden: Record<string, string>;
   note: NoteView | null;
   href?: string;
+  onClick?: (event: { preventDefault: () => void; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean }) => void;
   className?: string;
   canEdit?: boolean;
   remove?: {
@@ -66,7 +68,7 @@ export function EditableName({
   if (!canEdit) {
     return (
       <span className="group/tip relative inline-flex max-w-full min-w-0">
-        {href ? <Link href={href} className="hover:text-[#15246d]">{label}</Link> : label}
+        {href ? <Link href={href} onClick={onClick} className="hover:text-[#15246d]">{label}</Link> : label}
         {note ? <NoteTip note={note} /> : null}
       </span>
     );
@@ -108,7 +110,7 @@ export function EditableName({
       ) : null}
       <span className="group/tip relative min-w-0">
         {href ? (
-          <Link href={href} className="hover:text-[#15246d]">{label}</Link>
+          <Link href={href} onClick={onClick} className="hover:text-[#15246d]">{label}</Link>
         ) : (
           label
         )}

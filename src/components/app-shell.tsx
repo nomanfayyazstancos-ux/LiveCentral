@@ -2,12 +2,13 @@ import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 import { logout } from "@/app/actions";
 import { MenuSearch } from "@/components/menu-search";
-import { Sidebar, type TreeItem } from "@/components/sidebar";
+import { DeskMain } from "@/components/desk-main";
+import type { ActivityNote } from "@/components/activity-note";
 import { btnQuiet } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
-import { listPending, type CategoryNode } from "@/lib/db";
+import { listPending, type CategoryNode, type Product } from "@/lib/db";
 
-function slim(nodes: CategoryNode[]): TreeItem[] {
+function slim(nodes: CategoryNode[]) {
   return nodes.map((node) => ({
     id: node.id,
     name: node.name,
@@ -19,10 +20,16 @@ function slim(nodes: CategoryNode[]): TreeItem[] {
 
 export async function AppShell({
   tree,
+  products,
+  activities,
+  canEdit,
   categoryCount,
   children,
 }: {
   tree: CategoryNode[];
+  products: Product[];
+  activities: ActivityNote[];
+  canEdit: boolean;
   categoryCount: number;
   children: ReactNode;
 }) {
@@ -58,12 +65,11 @@ export async function AppShell({
           </div>
         </div>
       </header>
-      <div className="mx-auto flex max-w-[1600px] flex-col lg:items-start lg:flex-row">
-        <Suspense fallback={<div className="w-full shrink-0 border-b border-[#e3e6ef] bg-white lg:h-screen lg:w-96 lg:border-r lg:border-b-0" />}>
-          <Sidebar tree={slim(tree)} />
-        </Suspense>
-        <main className="min-w-0 flex-1 px-5 py-6">{children}</main>
-      </div>
+      <Suspense fallback={<div className="mx-auto h-[70vh] max-w-[1600px]" />}>
+        <DeskMain tree={tree} sidebar={slim(tree)} products={products} activities={activities} canEdit={canEdit}>
+          {children}
+        </DeskMain>
+      </Suspense>
     </div>
   );
 }

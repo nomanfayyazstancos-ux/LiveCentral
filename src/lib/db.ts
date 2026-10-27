@@ -548,11 +548,8 @@ export function categoryDepth(category: Category, byId: Map<number, Category>) {
   return depth;
 }
 
-async function buildMenu(attempt = 0): Promise<MenuData> {
-  const started = await dbRevision();
+async function buildMenu(): Promise<MenuData> {
   const [categories, products] = await Promise.all([allCategories(), allProducts()]);
-  const revision = await dbRevision();
-  if (started !== revision && attempt < 2) return buildMenu(attempt + 1);
   const byId = new Map(categories.map((category) => [category.id, category]));
   const productsByCategory = new Map<number, Product[]>();
   for (const product of products) {
@@ -584,19 +581,12 @@ async function buildMenu(attempt = 0): Promise<MenuData> {
   }
 
   const tree = (childrenOf.get(null) ?? []).map(toNode);
-  return { categories, products, byId, productsByCategory, nodeById, tree, revision };
-}
-
-async function dbRevision() {
-  const db = await database();
-  const row = await db.collection<CounterDoc>("counters").findOne({ _id: "menu" });
-  return Number(row?.seq ?? 0);
+  return { categories, products, byId, productsByCategory, nodeById, tree, revision: 0 };
 }
 
 export async function loadMenu() {
-  const revision = await dbRevision();
   const cached = globalForDb.menuCache;
-  if (cached?.revision === revision) return cached;
+  if (cached) return cached;
   const epoch = globalForDb.menuEpoch ?? 0;
   if (!globalForDb.menuLoading) {
     globalForDb.menuLoading = buildMenu().finally(() => {

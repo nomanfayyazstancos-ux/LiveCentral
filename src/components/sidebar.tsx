@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { useBrowse } from "@/components/browse";
 
 export type TreeItem = {
   id: number;
@@ -26,11 +27,13 @@ function Branch({
   open,
   activeId,
   onToggle,
+  onOpen,
 }: {
   nodes: TreeItem[];
   open: number[];
   activeId: number | null;
   onToggle: (id: number) => void;
+  onOpen: (event: { preventDefault: () => void; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean }, id: number) => void;
 }) {
   return (
     <ul className="space-y-0.5">
@@ -57,6 +60,8 @@ function Branch({
               <Link
                 href={hasChildren ? `/?category=${node.id}` : `/products/${node.id}`}
                 scroll={false}
+                prefetch={false}
+                onClick={hasChildren ? (event) => onOpen(event, node.id) : undefined}
                 className={`flex min-w-0 flex-1 items-center gap-2 py-2 pr-2 text-sm font-medium ${active ? "text-white" : "text-[#1a1a1a]"}`}
               >
                 <span className="min-w-0 flex-1 leading-5">{node.name}</span>
@@ -82,7 +87,7 @@ function Branch({
             </div>
             {hasChildren && expanded ? (
               <div className="ml-4 border-l border-[#d9deea] pl-1">
-                <Branch nodes={node.children} open={open} activeId={activeId} onToggle={onToggle} />
+                <Branch nodes={node.children} open={open} activeId={activeId} onToggle={onToggle} onOpen={onOpen} />
               </div>
             ) : null}
           </li>
@@ -105,13 +110,11 @@ function readOpen() {
 export function Sidebar({ tree }: { tree: TreeItem[] }) {
   const pathname = usePathname();
   const params = useSearchParams();
+  const browse = useBrowse();
   const categoryParam = Number(params.get("category") ?? "");
   const productMatch = pathname.match(/^\/products\/(\d+)/);
-  const activeId = productMatch
-    ? Number(productMatch[1])
-    : pathname === "/" && Number.isFinite(categoryParam) && categoryParam > 0
-      ? categoryParam
-      : null;
+  const urlCategory = pathname === "/" && Number.isFinite(categoryParam) && categoryParam > 0 ? categoryParam : null;
+  const activeId = productMatch ? Number(productMatch[1]) : browse && pathname === "/" ? browse.categoryId : urlCategory;
   const listRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState<number[]>([]);
 
@@ -140,6 +143,12 @@ export function Sidebar({ tree }: { tree: TreeItem[] }) {
     setOpen((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
   }
 
+  function openCategory(event: { preventDefault: () => void; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean }, id: number) {
+    if (!browse || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    browse.openCategory(id);
+  }
+
   return (
     <aside className="flex w-full shrink-0 flex-col border-b border-[#e3e6ef] bg-white max-lg:max-h-[46vh] lg:sticky lg:top-0 lg:h-screen lg:w-96 lg:border-r lg:border-b-0">
       <div className="border-b border-[#e3e6ef] px-5 py-4">
@@ -150,7 +159,7 @@ export function Sidebar({ tree }: { tree: TreeItem[] }) {
         </p>
       </div>
       <div ref={listRef} onScroll={rememberScroll} className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
-        <Branch nodes={tree} open={open} activeId={activeId} onToggle={toggle} />
+        <Branch nodes={tree} open={open} activeId={activeId} onToggle={toggle} onOpen={openCategory} />
       </div>
     </aside>
   );
